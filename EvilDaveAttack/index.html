@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Attack of the Evil Daves!</title>
+
+<script src="http://code.jquery.com/jquery-2.1.1.min.js"></script>
+<script	src="http://cdn.jsdelivr.net/jquery.hotkeys/0.8b/jquery.hotkeys.min.js"></script>
+<script src="resources/javascript/key_status.js"></script>
+<script src="resources/javascript/util.js"></script>
+<script src="resources/javascript/sprite.js"></script>
+<script src="resources/javascript/bullet.js"></script>
+<script src="resources/javascript/player.js"></script>
+<script src="resources/javascript/standard_enemy.js"></script>
+
+<style>
+#gameCanvas {
+	padding-left: 0;
+	padding-right: 0;
+	margin-left: auto;
+	margin-right: auto;
+	display: block;
+	border: 1px dotted;
+}
+
+#buttonDiv {
+	margin-top: 20px;
+	text-align:center;
+}
+
+</style>
+</head>
+
+<body>
+	<script type="text/javascript">
+		var context;
+		var player;
+		var enemies = [];
+		var FPS = 30; // 30 FPS should be good for smooth play
+		var paused = false;
+		var isGameOver = false;
+		var imgBackground = new Image();
+		var audioPlaying = true;
+
+		// Start the game loop
+		$(document).ready(function() {
+			context = $("#gameCanvas")[0].getContext("2d");
+
+			imgBackground.src = "resources/images/background.png";
+			player = new Player((context.canvas.width / 2) - 10, context.canvas.height - 60);
+			
+			setupEnemies();
+			
+			// Start the game loop
+			setInterval(function() {
+				update();
+				draw();
+			}, 1000 / FPS);
+			
+			// Add support for pausing/playing the music
+			$("#audioControl").click(function() {
+				if (audioPlaying) {
+					$("#player")[0].pause()
+					$("#audioControl").html("Play Music");
+				} else {
+					$("#player")[0].play()
+					$("#audioControl").html("Pause Music");
+				}
+				
+				audioPlaying = !audioPlaying;
+				
+				$("#audioControl").blur();
+			});
+
+			// Restart the game
+			$("#gameControl").click(function() {
+				resetGame();
+				$("#gameControl").blur();
+			})
+		});
+		
+		// When we restart the gam, clear the scores, remove all bullets and recreate enemy objects
+		function resetGame() {
+			isGameOver = false;
+			enemies = [];
+			player.bullets = [];
+			player.score = 0;
+			player.x = (context.canvas.width / 2) - 10;
+			
+			setupEnemies();
+		}
+
+		// Create two rows of 8 enemies
+		function setupEnemies() {
+			centerX = context.canvas.width / 2;
+			spacing = 20;
+			
+			for (i=1; i<=4; i++) {
+				offset = (40 * (i-1)) + (spacing * i);
+				
+				enemies.push(new Enemy(centerX + offset, 50));
+				enemies.push(new Enemy(centerX - offset - 20, 50));
+				
+				enemies.push(new Enemy(centerX + offset, 120));
+				enemies.push(new Enemy(centerX - offset - 20, 120));
+			}
+		}
+
+		// Clear the canvas in between frames
+		function clearCanvas() {
+			context.save();
+
+			context.setTransform(1, 0, 0, 1, 0, 0);
+			context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+
+			context.restore();
+		}
+
+		function update() {
+			if (keydown.p) {
+				paused = !paused;
+			}
+			
+			// Check if there are more enemies to shoot
+			moreEnemies = false;
+			enemies.forEach(function (enemy) {
+				if (enemy.active) {
+					moreEnemies = true;
+				}
+			});
+			
+			// If no more enemies, the player won and end the game
+			if (!moreEnemies) {
+				isGameOver = true;
+			}
+
+			// Handle keyboard controls
+			if (!paused && !isGameOver) {
+				if (keydown.space) {
+					player.shoot();
+				}
+	
+				if (keydown.left) {
+					player.x -= 5;
+				}
+	
+				if (keydown.right) {
+					player.x += 5;
+				}
+	
+				player.x = player.x.clamp(0, context.canvas.width - player.sprite.width);
+				
+				player.bullets.forEach(function(bullet) {
+					bullet.update(context);
+				});
+				
+				player.bullets = player.bullets.filter(function(bullet) {
+					return bullet.active;
+				});
+				
+				enemies.forEach(function(enemy) {
+					enemy.update(context);
+	
+					enemy.bullets.forEach(function(bullet) {
+						bullet.update(context);
+					});
+					
+					enemy.bullets = enemy.bullets.filter(function(bullet) {
+						return bullet.active;
+					});
+				});
+				
+				handleCollisions();
+				
+				enemies = enemies.filter(function(enemy) {
+					return enemy.active || (!enemy.active && enemy.bullets.length > 0);
+				});
+			}
+			
+			if (isGameOver) {
+				player.bullets = [];
+				
+				enemies.forEach(function(enemy) {
+					enemy.bullets = [];
+				});
+			}
+		}
+
+		// Draw the canvas
+		function draw() {
+			clearCanvas();
+			context.drawImage(imgBackground, 0, 0);
+			drawStats();
+			
+			if (!isGameOver) {
+				player.draw(context);
+				
+				player.bullets.forEach(function(bullet) {
+					bullet.draw(context);
+				});
+	
+				enemies.forEach(function(enemy) {
+					enemy.draw(context);
+					enemy.bullets.forEach(function(bullet) {
+						bullet.draw(context);
+					});
+				});
+			} else {
+				player.draw(context);
+
+				enemies.forEach(function(enemy) {
+					enemy.draw(context);
+				});
+				
+				if (player.playerDead) {
+					drawPlayerDead();
+				} else {
+					drawPlayerWon();
+				}
+			}
+		}
+		
+		// Handle bullet hits
+		function handleCollisions() {
+			player.bullets.forEach(function(bullet) {
+				enemies.forEach(function(enemy) {
+					if (collides(bullet, enemy)) {
+						enemy.explode();
+						bullet.active = false;
+						player.score += 1;
+					}
+				});
+			});
+			
+			enemies.forEach(function(enemy) {
+				enemy.bullets.forEach(function(bullet) {
+					if (collides(bullet, player)) {
+						player.explode();
+						isGameOver = true;
+					}
+				});
+			});
+		}
+
+		// Draw some game stats
+		function drawStats() {
+			context.save();
+
+			if (player.bullets.length == 0) {
+				context.fillStyle = "lime";
+			} else {
+				context.fillStyle = "red";
+			}
+
+			context.font = "bold 12px sans-serif";
+			lineSpace = 10 + 12;
+			
+			context.fillText("Player Bullet Count: " + player.bullets.length, 20, 40);
+			context.fillText("Enemy Count: " + enemies.length, 20, 40 + (lineSpace * 1));
+			
+			var ecnt = 0;
+			enemies.forEach(function(enemy) {
+				ecnt+=enemy.bullets.length;
+			});
+			
+			context.fillText("Enemy Bullet Count: " + ecnt, 20, 40 + (lineSpace * 2));
+			context.fillText("Score: " + player.score, 20, 40 + (lineSpace * 3));
+
+			context.restore();
+		}
+		
+		function drawPlayerDead() {
+			context.save()
+			context.shadowColor = 'black';
+			context.shadowOffsetX = 1;
+			context.shadowOffsetY = 1;
+			context.shadowBlur = 8;
+			
+			context.fillStyle = "red";
+			context.font = "bold 22px sans-serif";
+			context.fillText("Oh no!", 290, context.canvas.height / 2 - 22);
+			context.fillText("The evil Daves killed Pineapple Man!", 130, context.canvas.height / 2 + 22);
+			context.restore();
+		}
+		
+		function drawPlayerWon() {
+			context.save()
+			context.shadowColor = 'black';
+			context.shadowOffsetX = 1;
+			context.shadowOffsetY = 1;
+			context.shadowBlur = 8;
+			
+			context.fillStyle = "lime";
+			context.font = "bold 22px sans-serif";
+			context.fillText("Thank you Pineapple Man!", 175, context.canvas.height / 2 - 22);
+			context.fillText("You saved us from the evil Daves!", 135, context.canvas.height / 2 + 22);
+			context.restore();
+		}
+
+	</script>
+	<canvas id="gameCanvas" width="640" height="480"></canvas>
+	
+	<audio id="player" autoplay loop>
+		<source src="resources/audio/presidents-of-usa-peaches.mp3">
+	</audio>
+
+	<div id="buttonDiv">
+		<div>p: pause, left arrow: move left, right arrow: move right, spacebar: fire</div>
+		<button id="gameControl">Restart</button>
+		<button id="audioControl">Pause Music</button>
+	</div>
+</body>
+</html>
