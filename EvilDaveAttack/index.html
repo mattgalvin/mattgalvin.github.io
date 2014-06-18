@@ -41,6 +41,7 @@
 		var isGameOver = false;
 		var imgBackground = new Image();
 		var audioPlaying = true;
+		var gameLoop;
 
 		// Start the game loop
 		$(document).ready(function() {
@@ -52,7 +53,7 @@
 			setupEnemies();
 			
 			// Start the game loop
-			setInterval(function() {
+			gameLoop = setInterval(function() {
 				update();
 				draw();
 			}, 1000 / FPS);
@@ -88,6 +89,14 @@
 			player.x = (context.canvas.width / 2) - 10;
 			
 			setupEnemies();
+			
+			// Start the game loop
+			if (!gameLoop) {
+				gameLoop = setInterval(function() {
+					update();
+					draw();
+				}, 1000 / FPS);
+			}
 		}
 
 		// Create two rows of 8 enemies
@@ -170,11 +179,11 @@
 					});
 				});
 				
-				handleCollisions();
-				
 				enemies = enemies.filter(function(enemy) {
 					return enemy.active || (!enemy.active && enemy.bullets.length > 0);
 				});
+				
+				handleCollisions();
 			}
 			
 			if (isGameOver) {
@@ -217,6 +226,9 @@
 				} else {
 					drawPlayerWon();
 				}
+				
+				clearInterval(gameLoop);
+				gameLoop = null;
 			}
 		}
 		
